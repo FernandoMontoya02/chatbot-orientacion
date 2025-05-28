@@ -1,0 +1,64 @@
+<div class="header-banner">
+  <button class="menu-btn" (click)="toggleMenu()">☰</button>
+
+  <div class="logo-container">
+    <img src="https://www.universidades.com.ec/logos/original/logo-universidad-tecnica-de-machala.webp" alt="Logo UTMACH" />
+  </div>
+  <div class="text-container">
+    <h1>CHAT-AI DE ORIENTACIÓN VOCACIONAL</h1>
+    <p>Universidad Técnica de Machala - UTMACH</p>
+  </div>
+</div>
+
+
+<div class="chat-container">
+  <!-- Botón de menú -->
+
+  <!-- Menú lateral -->
+  <div class="chat-sidebar" [ngClass]="{'show': showMenu}">
+    <h3 class="sidebar-title">Historial de Conversaciones</h3>
+    <ul class="conversation-list">
+      <li *ngFor="let conversation of conversations" class="conversation-item">
+        <div class="conversation-content">
+          <button class="load-btn" (click)="loadConversation(conversation.userName)">
+            {{ conversation.userName }}
+          </button>
+          <button class="delete-btn" (click)="deleteConversation(conversation.userName)">✖</button>
+        </div>
+      </li>      
+    </ul>
+  </div>
+  
+
+  <!-- Área de chat -->
+  <div class="chat-box" [ngClass]="{'with-menu': showMenu}">
+    <div class="messages" #chatContainer>
+      <div *ngFor="let message of messages" [ngClass]="message.sender">
+        <!-- Mensaje del usuario -->
+        <p *ngIf="message.sender === 'user'">{{ message.text }}</p>
+
+        <!-- Mensaje del bot procesado -->
+        <div *ngIf="message.sender === 'bot'" [innerHTML]="message.html ? message.html : message.text"></div>
+      </div>
+    </div>
+
+    <!-- Indicador de carga -->
+    <div class="loading-indicator" *ngIf="isLoading">
+      <div class="spinner"></div>
+      <span>Procesando información...</span>
+    </div>
+
+    <div class="input-container">
+      <input
+        type="text"
+        [(ngModel)]="userMessage"
+        (keydown.enter)="sendMessage()"
+        placeholder="Escribe tu mensaje..."
+        class="message-input"
+        [disabled]="chatTerminado"
+      />
+      <button class="send-btn" (click)="sendMessage()" aria-label="Enviar mensaje">➤</button>
+      <button class="clear-btn" (click)="resetChat()">Nueva conversación</button>
+    </div>
+  </div>
+</div>

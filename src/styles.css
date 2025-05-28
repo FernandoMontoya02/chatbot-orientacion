@@ -1,0 +1,12 @@
+body {
+  font-family: 'Inter', sans-serif !important;
+}
+
+/* Colores representativos de la universidad */
+:root {
+    --color-rojo: #d32f2f;
+    --color-blanco: #ffffff;
+    --color-celeste: #00bcd4;
+    --color-azul: #53aae1;
+  }
+  
