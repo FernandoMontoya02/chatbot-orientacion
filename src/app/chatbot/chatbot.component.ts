@@ -176,7 +176,7 @@ Por favor, responde de forma cálida, breve y útil como orientador vocacional. 
       `.trim();
 
       const res = await this.http.post<{ response: string }>(
-        'http://localhost:3000/api/chat',
+        'https://chatbot-orientacion.onrender.com/api/chat',
         { message: followUpPrompt }
       ).toPromise();
 
@@ -190,7 +190,7 @@ Por favor, responde de forma cálida, breve y útil como orientador vocacional. 
   private async getReformulatedQuestion(prompt: string): Promise<string> {
     try {
       const res = await this.http.post<{ response: string }>(
-        'http://localhost:3000/api/chat',
+        'https://chatbot-orientacion.onrender.com/api/chat',
         { message: prompt }
       ).toPromise();
 
@@ -242,7 +242,7 @@ Siguiente pregunta: "${nextQuestion}"
 
     try {
       const res = await this.http.post<{ response: string }>(
-        'http://localhost:3000/api/chat',
+        'https://chatbot-orientacion.onrender.com/api/chat',
         { message: prompt }
       ).toPromise();
 
@@ -272,7 +272,7 @@ Escribe como un orientador cálido, usando lenguaje sencillo, motivador y cercan
 
     try {
       const res = await this.http.post<{ response: string }>(
-        'http://localhost:3000/api/chat',
+        'https://chatbot-orientacion.onrender.com/api/chat',
         { message: promptFinal }
       ).toPromise();
 
