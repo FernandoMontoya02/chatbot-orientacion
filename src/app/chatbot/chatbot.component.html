@@ -55,9 +55,9 @@
         (keydown.enter)="sendMessage()"
         placeholder="Escribe tu mensaje..."
         class="message-input"
-        [disabled]="chatTerminado"
+        [disabled]="chatTerminado || isLoading"
       />
-      <button class="send-btn" (click)="sendMessage()" aria-label="Enviar mensaje">➤</button>
+      <button class="send-btn" (click)="sendMessage()" aria-label="Enviar mensaje" [disabled]="chatTerminado || isLoading || !userMessage.trim()">➤</button>
       <button class="clear-btn" (click)="resetChat()">Nueva conversación</button>
     </div>
   </div>

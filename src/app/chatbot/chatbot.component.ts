@@ -115,19 +115,26 @@ export class ChatbotComponent implements OnInit {
     this.scrollToBottom();
 
     if (!this.hasName) {
-      this.userName = this.extractNameFromMessage(userText) || 'amigo';
-      this.hasName = true;
+  const extractedName = this.extractNameFromMessage(userText);
 
-      const intro = `
+  if (extractedName) {
+    this.userName = extractedName;
+    this.hasName = true;
+
+    const intro = `
 ¡Qué gusto conocerte, ${this.userName.split(' ')[0]}! 😊 Estoy aquí para ayudarte a descubrir qué carrera te va mejor.
 Antes, déjame hacerte algunas preguntas para conocerte mejor. ¿Listo?
 
 ${this.questions[this.questionIndex].text}
-      `.trim();
+    `.trim();
 
-      await this.typeBotMessage(intro);
-      return;
-    }
+    await this.typeBotMessage(intro);
+  } else {
+    // No detectó nombre, pide al usuario que lo escriba claramente
+    await this.typeBotMessage('No entendí tu nombre. Por favor, dime cómo te llamas diciendo por ejemplo: "Me llamo Juan" o "Soy Ana".');
+  }
+  return;
+}
 
     if (this.questionIndex < this.questions.length) {
       const currentQuestion = this.questions[this.questionIndex];
@@ -243,7 +250,7 @@ Siguiente pregunta: "${nextQuestion}"
       `.trim();
       
 
-    this.isLoading = true;
+    this.isLoading = false;
 
     try {
       const res = await this.http.post<{ response: string }>(
@@ -284,10 +291,26 @@ Siguiente pregunta: "${nextQuestion}"
     this.scrollToBottom();
   }
 
-  extractNameFromMessage(message: string): string | null {
-    const match = message.match(/(?:me llamo|soy)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ]+)/i);
-    return match?.[1] || message.trim().split(' ')[0] || null;
+extractNameFromMessage(message: string): string | null {
+  // Busca patrones comunes para nombre
+  const match = message.match(/(?:me llamo|soy)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ]+)/i);
+if (match && match[1]) {
+  return match[1].trim().split(' ')[0];
+}
+
+  // Si no hay patrón, verifica que la primera palabra no sea saludo común
+  const firstWord = message.trim().split(' ')[0].toLowerCase();
+
+  const greetings = ['hola', 'hey', 'buenos', 'buenas', 'saludos', 'buen día', 'buenas tardes', 'buenas noches'];
+
+  if (greetings.includes(firstWord)) {
+    return null; // No tomar saludos como nombre
   }
+
+  // Si quieres ser estricto, podrías retornar null si no hay patrón claro
+  return null;
+}
+
 
   async parseMarkdown(text: string): Promise<SafeHtml> {
     const html = await marked.parse(text);
