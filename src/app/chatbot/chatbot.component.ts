@@ -31,7 +31,7 @@ export class ChatbotComponent implements OnInit {
   isLoading = false;
   processCompleted = false;
   awaitingFollowUp = false;
-  chatTerminado = false; // 🔒 Bloquea el chat una vez terminado
+  chatTerminado = false;
   questionIndex = 0;
   userAnswers: Record<string, string> = {};
   questions: { key: string; text: string }[] = [];
@@ -59,35 +59,29 @@ export class ChatbotComponent implements OnInit {
     };
   }
 
-  // NUEVA FUNCIÓN para detectar respuestas no entendidas o sin sentido
   private isAnswerValid(answer: string): boolean {
     const lowAnswer = answer.toLowerCase().trim();
-
-    // Respuestas "sin sentido" o comunes para indicar no entender
     const invalidPatterns = [
-      /^([a-z]{2,}){3,}$/, // como "dsadas", "asdqwe" (secuencia de letras sin sentido)
+      /^([a-z]{2,}){3,}$/,
       'no entiendo',
       'no comprendo',
       'no se',
       'no sé',
       'no lo entiendo',
       'no entendí',
-      'no comprendo',
-      'no comprendo la pregunta',
       'no te entiendo',
       '???',
-      '...'
+      '...',
     ];
 
     for (const pattern of invalidPatterns) {
       if (typeof pattern === 'string') {
         if (lowAnswer.includes(pattern)) return false;
       } else {
-        // es regex
         if (pattern.test(lowAnswer)) return false;
       }
     }
-    // Si la respuesta tiene muy pocos caracteres o solo números, puede ser inválida
+
     if (lowAnswer.length <= 2) return false;
     if (/^\d+$/.test(lowAnswer)) return false;
 
@@ -95,7 +89,7 @@ export class ChatbotComponent implements OnInit {
   }
 
   async sendMessage(): Promise<void> {
-    if (!this.userMessage.trim()) return;
+    if (!this.userMessage.trim() || this.chatTerminado) return;
 
     const userText = this.userMessage.trim();
     this.messages.push({ sender: 'user', text: userText });
@@ -119,60 +113,63 @@ ${this.questions[this.questionIndex].text}
 
     if (this.questionIndex < this.questions.length) {
       const currentQuestion = this.questions[this.questionIndex];
-
-      // Validar respuesta:
       const isValid = this.isAnswerValid(userText);
-
+    
       if (!isValid) {
-        // Si la respuesta no se entiende, la IA debe reformular la misma pregunta
-        const reformulatePrompt = `
-El estudiante respondió algo que no se entiende o no tiene sentido:
+     const reformulatedPrompt = `
+Eres un orientador vocacional empático y paciente de la Universidad Técnica de Machala (UTMACH).
 
-"${userText}"
-
-Por favor, reformula la siguiente pregunta para que sea más clara y explíquela mejor, sin avanzar a la siguiente pregunta:
+Estás conversando con un estudiante y le has hecho la siguiente pregunta:
 
 "${currentQuestion.text}"
-        `.trim();
 
-        const reformulatedQuestion = await this.getReformulatedQuestion(reformulatePrompt);
-        await this.typeBotMessage(reformulatedQuestion);
-        // No avanzar el índice, repetir la misma pregunta
+El estudiante ha respondido de forma confusa o poco clara. Sin mencionar que la respuesta fue confusa, vuelve a plantear la misma pregunta de manera más clara, sencilla y explicativa para que el estudiante la comprenda mejor. Dirígete directamente al estudiante. Usa un tono empático, conversacional y accesible. No expliques lo que hiciste, solo muestra el mensaje final que será mostrado al estudiante.
+`.trim();
+        try {
+          const res = await this.http.post<{ response: string }>(
+            'https://chatbot-orientacion.onrender.com/api/chat',
+            { message: reformulatedPrompt }
+          ).toPromise();
+    
+          const reformulated = res?.response || 'Déjame explicarlo mejor: ' + currentQuestion.text;
+          const html = await this.parseMarkdown(reformulated);
+          this.messages.push({ sender: 'bot', text: reformulated, html });
+          this.scrollToBottom();
+        } catch (err) {
+          console.error('Error generando reformulación:', err);
+          await this.typeBotMessage('Déjame explicarlo de otra manera: ' + currentQuestion.text);
+        }
+    
         return;
       }
-
-      // Si la respuesta es válida, la guardamos y avanzamos índice
+    
+      // Si la respuesta es válida
       this.userAnswers[currentQuestion.key] = userText;
       this.questionIndex++;
-
-      // Control estricto: no hacer de más  preguntas válidas
-if (this.questionIndex >= this.questions.length) {
-  await this.typeBotMessage('Gracias por compartir todo eso conmigo. Déjame analizar tus respuestas...');
-  await this.finishAndSendToAPI();
-  this.chatTerminado = true; // 🔒 Bloquea el chat
-  return;
-}
-
-      // Siguiente pregunta
-      const nextQuestion = this.questionIndex < this.questions.length
-        ? this.questions[this.questionIndex].text
-        : '';
-
+    
+      if (this.questionIndex >= this.questions.length) {
+        await this.typeBotMessage('Gracias por compartir todo eso conmigo. Déjame analizar tus respuestas...');
+        await this.finishAndSendToAPI();
+        this.chatTerminado = true;
+        return;
+      }
+    
+      const nextQuestion = this.questions[this.questionIndex].text;
       const naturalResponse = await this.generateNaturalResponse(
         currentQuestion.text,
         userText,
         nextQuestion
       );
-
       await this.typeBotMessage(naturalResponse);
-
-    } else if (this.awaitingFollowUp) {
+    }
+    
+     else if (this.awaitingFollowUp) {
       const followUpPrompt = `
 El estudiante ha respondido después de recibir su recomendación:
 
 "${userText}"
 
-Por favor, responde de forma cálida, breve y útil como orientador vocacional. Si es una pregunta sobre una carrera, da más detalles. Si es una expresión como "gracias", responde de forma amable.
+Por favor, responde de forma cálida, breve y útil como orientador vocacional. Si es una expresión como "gracias", responde de forma amable.
       `.trim();
 
       const res = await this.http.post<{ response: string }>(
@@ -180,41 +177,9 @@ Por favor, responde de forma cálida, breve y útil como orientador vocacional. 
         { message: followUpPrompt }
       ).toPromise();
 
-      const reply = res?.response || 'Gracias por tu mensaje. ¿Quieres saber más sobre alguna carrera?';
+      const reply = res?.response || 'Gracias por tu mensaje.';
       await this.typeBotMessage(reply);
-    } else {
-      await this.typeBotMessage('No tengo más preguntas para ti. Si deseas reiniciar la conversación, recarga la página.');
     }
-  }
-
-  private async getReformulatedQuestion(prompt: string): Promise<string> {
-    try {
-      const res = await this.http.post<{ response: string }>(
-        'https://chatbot-orientacion.onrender.com/api/chat',
-        { message: prompt }
-      ).toPromise();
-
-      return res?.response || 'Perdona, no entendí bien tu respuesta. ' + this.questions[this.questionIndex].text;
-    } catch (err) {
-      console.error('Error reformulando pregunta:', err);
-      return 'Perdona, no entendí bien tu respuesta. ' + this.questions[this.questionIndex].text;
-    }
-  }
-
-async typeBotMessage(text: string): Promise<void> {
-  const speed = 5;
-  let displayed = '';
-  const message: { sender: 'bot'; text: string; html?: SafeHtml } = { sender: 'bot', text: '' };
-  this.messages.push(message);
-
-  for (let i = 0; i < text.length; i++) {
-    displayed += text[i];
-    message.text = displayed;
-    if (i % 5 === 0) this.scrollToBottom(); // Menos llamadas
-    await new Promise(r => setTimeout(r, speed));
-  }
-  this.scrollToBottom(); // Asegura el final
-
   }
 
   async generateNaturalResponse(currentQuestion: string, studentAnswer: string, nextQuestion: string): Promise<string> {
@@ -226,15 +191,6 @@ Eres un orientador vocacional cálido, empático y cercano de la Universidad Té
 3. Usa un solo mensaje fluido y natural, no enumeres partes. No uses comillas.
 4. No agregues detalles que el estudiante no mencionó. Solo comenta lo que dijo, valorando su respuesta y empatizando.
 
-Ejemplo:
-Pregunta: "¿Qué disfrutas hacer en tu tiempo libre?"
-Respuesta del estudiante: "Me gusta crear contenido y trabajar en equipo."
-Siguiente pregunta: "¿Qué tal te llevas con los números y las matemáticas?"
-
-Respuesta esperada:
-¡Qué interesante que disfrutes crear contenido y que te guste trabajar con otros! Eso habla muy bien de tu creatividad y habilidades sociales. Ahora cuéntame, ¿qué tal te llevas con los números y las matemáticas?
-
-Ahora genera una respuesta con base en:
 Pregunta: "${currentQuestion}"
 Respuesta del estudiante: "${studentAnswer}"
 Siguiente pregunta: "${nextQuestion}"
@@ -258,15 +214,16 @@ Siguiente pregunta: "${nextQuestion}"
       .map(([k, v]) => `- ${k}: ${v}`)
       .join('\n');
 
-    const promptFinal = `
-Este es el resumen de las respuestas del estudiante. Redacta en español:
-
-${resumen}
-
-Con base en esto, ¿qué carreras de la Universidad Técnica de Machala (UTMACH) se ajustan mejor a su perfil?
-
-Escribe como un orientador cálido, usando lenguaje sencillo, motivador y cercano.
-    `.trim();
+      const promptFinal = `
+      Este es el resumen de las respuestas del estudiante. Redacta en español:
+      
+      ${resumen}
+      
+      Con base en esto, ¿qué carreras de la Universidad Técnica de Machala (UTMACH) se ajustan mejor a su perfil?
+      
+      Escribe como un orientador cálido, usando lenguaje sencillo, motivador y cercano. Al final, indica amablemente que esta conversación ha terminado y que si desea comenzar una nueva puede hacerlo con el botón "Nueva conversación" o recargando la página.
+      `.trim();
+      
 
     this.isLoading = true;
 
@@ -292,6 +249,21 @@ Escribe como un orientador cálido, usando lenguaje sencillo, motivador y cercan
       console.error('Error al enviar resumen:', err);
       await this.typeBotMessage('Ocurrió un error al analizar tus respuestas.');
     }
+  }
+
+  async typeBotMessage(text: string): Promise<void> {
+    const speed = 5;
+    let displayed = '';
+    const message: { sender: 'bot'; text: string; html?: SafeHtml } = { sender: 'bot', text: '' };
+    this.messages.push(message);
+
+    for (let i = 0; i < text.length; i++) {
+      displayed += text[i];
+      message.text = displayed;
+      if (i % 5 === 0) this.scrollToBottom();
+      await new Promise(r => setTimeout(r, speed));
+    }
+    this.scrollToBottom();
   }
 
   extractNameFromMessage(message: string): string | null {
@@ -323,6 +295,7 @@ Escribe como un orientador cálido, usando lenguaje sencillo, motivador y cercan
     this.userName = '';
     this.currentConversation = null;
     this.processCompleted = false;
+    this.chatTerminado = false;
 
     this.questionService.getRandomQuestionsByCompetence(10).then(questions => {
       this.questions = questions;
