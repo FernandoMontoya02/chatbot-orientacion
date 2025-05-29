@@ -60,33 +60,51 @@ export class ChatbotComponent implements OnInit {
   }
 
   private isAnswerValid(answer: string): boolean {
-    const lowAnswer = answer.toLowerCase().trim();
-    const invalidPatterns = [
-      /^([a-z]{2,}){3,}$/,
-      'no entiendo',
-      'no comprendo',
-      'no se',
-      'no sé',
-      'no lo entiendo',
-      'no entendí',
-      'no te entiendo',
-      '???',
-      '...',
-    ];
+  const lowAnswer = answer.toLowerCase().trim();
 
-    for (const pattern of invalidPatterns) {
-      if (typeof pattern === 'string') {
-        if (lowAnswer.includes(pattern)) return false;
-      } else {
-        if (pattern.test(lowAnswer)) return false;
-      }
+  const invalidPhrases = [
+    'no entiendo',
+    'no comprendo',
+    'no se',
+    'no sé',
+    'no lo entiendo',
+    'no entendí',
+    'no te entiendo',
+    '???',
+    '...',
+  ];
+
+  for (const phrase of invalidPhrases) {
+    if (lowAnswer.includes(phrase)) {
+      return false;
     }
-
-    if (lowAnswer.length <= 2) return false;
-    if (/^\d+$/.test(lowAnswer)) return false;
-
-    return true;
   }
+  if (lowAnswer.length <= 2) {
+    return false;
+  }
+  if (/^\d+$/.test(lowAnswer)) {
+    return false;
+  }
+  const vowelCount = (lowAnswer.match(/[aeiouáéíóú]/g) || []).length;
+  const hasSpaces = lowAnswer.includes(' ');
+
+  if (!hasSpaces && vowelCount < 2) {
+    return false;
+  }
+  if (/(.)\1{4,}/.test(lowAnswer)) {
+    return false;
+  }
+
+  if (/^[^a-z0-9áéíóúñ\s]+$/.test(lowAnswer)) {
+    return false;
+  }
+  const yesNoOnly = ['sí', 'si', 'no'];
+  if (yesNoOnly.includes(lowAnswer)) {
+    return false;
+  }
+  return true;
+}
+
 
   async sendMessage(): Promise<void> {
     if (!this.userMessage.trim() || this.chatTerminado) return;
