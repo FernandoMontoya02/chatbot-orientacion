@@ -10,10 +10,7 @@
   </div>
 </div>
 
-
 <div class="chat-container">
-  <!-- Botón de menú -->
-
   <!-- Menú lateral -->
   <div class="chat-sidebar" [ngClass]="{'show': showMenu}">
     <h3 class="sidebar-title">Historial de Conversaciones</h3>
@@ -28,10 +25,19 @@
       </li>      
     </ul>
   </div>
-  
 
   <!-- Área de chat -->
   <div class="chat-box" [ngClass]="{'with-menu': showMenu}">
+    <!-- Indicador de progreso -->
+    <div class="progress-indicator" *ngIf="hasName && !chatTerminado && questions.length > 0">
+      Pregunta {{ questionIndex + 1 }} de {{ questions.length }}
+    </div>
+
+    <!-- Mensaje para respuesta inválida (controlado desde TS) -->
+    <div class="invalid-answer-message" *ngIf="showInvalidAnswerMsg">
+      Lamento no comprendieras la pregunta, te ayudare a responderla. Por favor, intenta nuevamente.
+    </div>
+
     <div class="messages" #chatContainer>
       <div *ngFor="let message of messages" [ngClass]="message.sender">
         <!-- Mensaje del usuario -->
