@@ -106,44 +106,44 @@ export class ChatbotComponent implements OnInit {
     return true;
   }
 
-async sendMessage(): Promise<void> {
-  if (!this.userMessage.trim() || this.chatTerminado) return;
+  async sendMessage(): Promise<void> {
+    if (!this.userMessage.trim() || this.chatTerminado) return;
 
-  const userText = this.userMessage.trim();
-  this.messages.push({ sender: 'user', text: userText });
-  this.userMessage = '';
-  this.scrollToBottom();
+    const userText = this.userMessage.trim();
+    this.messages.push({ sender: 'user', text: userText });
+    this.userMessage = '';
+    this.scrollToBottom();
 
-  if (!this.hasName) {
-    const extractedName = this.extractNameFromMessage(userText);
+    if (!this.hasName) {
+      const extractedName = this.extractNameFromMessage(userText);
 
-    if (extractedName) {
-      this.userName = extractedName;
-      this.hasName = true;
+      if (extractedName) {
+        this.userName = extractedName;
+        this.hasName = true;
 
-      const intro = `
+        const intro = `
 ¡Qué gusto conocerte, ${this.userName.split(' ')[0]}! 😊 Estoy aquí para ayudarte a descubrir qué carrera te va mejor.
 Antes, déjame hacerte algunas preguntas para conocerte mejor. ¿Listo?
 
 ${this.questions[this.questionIndex].text}
       `.trim();
 
-      await this.typeBotMessage(intro);
-    } else {
-      await this.typeBotMessage('No entendí tu nombre. Por favor, dime cómo te llamas diciendo por ejemplo: "Me llamo Juan" o "Soy Ana".');
+        await this.typeBotMessage(intro);
+      } else {
+        await this.typeBotMessage('No entendí tu nombre. Por favor, dime cómo te llamas diciendo por ejemplo: "Me llamo Juan" o "Soy Ana".');
+      }
+      return;
     }
-    return;
-  }
 
-  if (this.questionIndex < this.questions.length) {
-    const currentQuestion = this.questions[this.questionIndex];
-    const isValid = this.isAnswerValid(userText);
+    if (this.questionIndex < this.questions.length) {
+      const currentQuestion = this.questions[this.questionIndex];
+      const isValid = this.isAnswerValid(userText);
 
-    if (!isValid) {
-  this.showInvalidAnswerMsg = true;
+      if (!isValid) {
+        this.showInvalidAnswerMsg = true;
 
-  // Reformular la pregunta para ayudar al usuario
-  const reformulatedPrompt = `
+        // Reformular la pregunta para ayudar al usuario
+        const reformulatedPrompt = `
 Eres un orientador vocacional empático y paciente de la Universidad Técnica de Machala (UTMACH).
 
 Has hecho esta pregunta al estudiante:
@@ -153,51 +153,51 @@ Has hecho esta pregunta al estudiante:
 El estudiante no entendió la pregunta. Sin mencionar que no entendió, explica la pregunta con más detalle, de manera clara y sencilla para que la comprenda mejor. Repite la pregunta al final para que pueda responder. Usa un tono amable y motivador.
       `.trim(); // tu prompt para explicar la pregunta
 
-  try {
-    const res = await firstValueFrom(
-      this.http.post<{ response: string }>(
-        'https://chatbot-orientacion.onrender.com/api/chat',
-        { message: reformulatedPrompt }
-      )
-    );
+        try {
+          const res = await firstValueFrom(
+            this.http.post<{ response: string }>(
+              'https://chatbot-orientacion.onrender.com/api/chat',
+              { message: reformulatedPrompt }
+            )
+          );
 
-    const reformulated = res?.response || 'Déjame explicarlo mejor: ' + currentQuestion.text;
-    const html = await this.parseMarkdown(reformulated);
-    this.messages.push({ sender: 'bot', text: reformulated, html });
-    this.scrollToBottom();
-  } catch (err) {
-    console.error('Error generando reformulación:', err);
-    await this.typeBotMessage('Déjame explicarlo de otra manera: ' + currentQuestion.text);
-  }
+          const reformulated = res?.response || 'Déjame explicarlo mejor: ' + currentQuestion.text;
+          const html = await this.parseMarkdown(reformulated);
+          this.messages.push({ sender: 'bot', text: reformulated, html });
+          this.scrollToBottom();
+        } catch (err) {
+          console.error('Error generando reformulación:', err);
+          await this.typeBotMessage('Déjame explicarlo de otra manera: ' + currentQuestion.text);
+        }
 
-  // No avanzamos la pregunta ni guardamos respuesta inválida
-  return;
-}
+        // No avanzamos la pregunta ni guardamos respuesta inválida
+        return;
+      }
 
 
-    // Respuesta válida, ocultar mensaje de error
-    this.showInvalidAnswerMsg = false;
+      // Respuesta válida, ocultar mensaje de error
+      this.showInvalidAnswerMsg = false;
 
-    // Guardar respuesta y avanzar
-    this.userAnswers[currentQuestion.key] = userText;
-    this.questionIndex++;
+      // Guardar respuesta y avanzar
+      this.userAnswers[currentQuestion.key] = userText;
+      this.questionIndex++;
 
-    if (this.questionIndex >= this.questions.length) {
-      await this.typeBotMessage('Gracias por compartir todo eso conmigo. Déjame analizar tus respuestas...');
-      await this.finishAndSendToAPI();
-      this.chatTerminado = true;
-      return;
-    }
+      if (this.questionIndex >= this.questions.length) {
+        await this.typeBotMessage('Gracias por compartir todo eso conmigo. Déjame analizar tus respuestas...');
+        await this.finishAndSendToAPI();
+        this.chatTerminado = true;
+        return;
+      }
 
-    const nextQuestion = this.questions[this.questionIndex].text;
-    const naturalResponse = await this.generateNaturalResponse(
-      currentQuestion.text,
-      userText,
-      nextQuestion
-    );
-    await this.typeBotMessage(naturalResponse);
-  } else if (this.awaitingFollowUp) {
-    const followUpPrompt = `
+      const nextQuestion = this.questions[this.questionIndex].text;
+      const naturalResponse = await this.generateNaturalResponse(
+        currentQuestion.text,
+        userText,
+        nextQuestion
+      );
+      await this.typeBotMessage(naturalResponse);
+    } else if (this.awaitingFollowUp) {
+      const followUpPrompt = `
 El estudiante ha respondido después de recibir su recomendación:
 
 "${userText}"
@@ -205,22 +205,22 @@ El estudiante ha respondido después de recibir su recomendación:
 Por favor, responde de forma cálida, breve y útil como orientador vocacional. Si es una expresión como "gracias", responde de forma amable.
     `.trim();
 
-    try {
-      const res = await firstValueFrom(
-        this.http.post<{ response: string }>(
-          'https://chatbot-orientacion.onrender.com/api/chat',
-          { message: followUpPrompt }
-        )
-      );
+      try {
+        const res = await firstValueFrom(
+          this.http.post<{ response: string }>(
+            'https://chatbot-orientacion.onrender.com/api/chat',
+            { message: followUpPrompt }
+          )
+        );
 
-      const reply = res?.response || 'Gracias por tu mensaje.';
-      await this.typeBotMessage(reply);
-    } catch (err) {
-      console.error('Error en seguimiento:', err);
-      await this.typeBotMessage('Gracias por tu mensaje.');
+        const reply = res?.response || 'Gracias por tu mensaje.';
+        await this.typeBotMessage(reply);
+      } catch (err) {
+        console.error('Error en seguimiento:', err);
+        await this.typeBotMessage('Gracias por tu mensaje.');
+      }
     }
   }
-}
 
 
 
@@ -288,6 +288,13 @@ Siguiente pregunta: "${nextQuestion}"
         this.processCompleted = true;
         this.chatStorage.saveConversation(this.userName, this.messages);
         this.scrollToBottom();
+
+        // Enviar nombre y recomendación al backend, que lo reenvía a Google Sheets
+        await this.http.post('https://chatbot-orientacion.onrender.com/api/guardar-resultado', {
+          nombre: this.userName,
+          resultado: res.response
+        }).toPromise();
+
       } else {
         await this.typeBotMessage('No se pudo generar una recomendación de carreras.');
       }
@@ -315,19 +322,22 @@ Siguiente pregunta: "${nextQuestion}"
 
   extractNameFromMessage(message: string): string | null {
     const trimmed = message.trim();
-    const match = trimmed.match(/(?:me llamo|soy)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ]+)/i);
+    const match = trimmed.match(/(?:me llamo|soy)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ\s]+)/i);
     if (match && match[1]) {
-      return match[1].trim().split(' ')[0];
+      return match[1].trim();
     }
-    const words = trimmed.split(' ');
-    if (words.length === 1) {
-      const firstWordLower = words[0].toLowerCase();
-      const greetings = ['hola', 'hey', 'buenos', 'buenas', 'saludos', 'buen día', 'buenas tardes', 'buenas noches'];
 
-      if (!greetings.includes(firstWordLower)) {
-        return words[0];
-      }
+    const words = trimmed.split(' ');
+    const greetings = ['hola', 'hey', 'buenos', 'buenas', 'saludos', 'buen día', 'buenas tardes', 'buenas noches'];
+
+    if (words.length >= 2 && !greetings.includes(words[0].toLowerCase())) {
+      return trimmed;
     }
+
+    if (words.length === 1 && !greetings.includes(words[0].toLowerCase())) {
+      return words[0];
+    }
+
     return null;
   }
 
