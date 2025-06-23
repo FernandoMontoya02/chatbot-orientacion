@@ -32,13 +32,14 @@
     <div class="progress-indicator" *ngIf="hasName && !chatTerminado && questions.length > 0">
       Pregunta {{ questionIndex + 1 }} de {{ questions.length }}
     </div>
+    
 
     <!-- Mensaje para respuesta inválida (controlado desde TS) -->
     <div class="invalid-answer-message" *ngIf="showInvalidAnswerMsg">
       Lamento no comprendieras la pregunta, te ayudare a responderla. Por favor, intenta nuevamente.
     </div>
 
-    <div class="messages" #chatContainer>
+    <div id="chatTranscript" class="messages" #chatContainer>
       <div *ngFor="let message of messages" [ngClass]="message.sender">
         <!-- Mensaje del usuario -->
         <p *ngIf="message.sender === 'user'">{{ message.text }}</p>
@@ -47,6 +48,12 @@
         <div *ngIf="message.sender === 'bot'" [innerHTML]="message.html ? message.html : message.text"></div>
       </div>
     </div>
+
+    <div class="chat-actions" *ngIf="chatTerminado">
+      <button (click)="copiarConversacion()">📋 Copiar texto</button>
+      <button (click)="generarPDF()">📄 Generar PDF</button>
+    </div>
+    
 
     <!-- Indicador de carga -->
     <div class="loading-indicator" *ngIf="isLoading">
@@ -64,7 +71,7 @@
         [disabled]="chatTerminado || isLoading"
       />
       <button class="send-btn" (click)="sendMessage()" aria-label="Enviar mensaje" [disabled]="chatTerminado || isLoading || !userMessage.trim()">➤</button>
-      <button class="clear-btn" (click)="resetChat()">Nueva conversación</button>
+      <button class="clear-btn" (click)="confirmarResetChat()">Nueva conversación</button>
     </div>
   </div>
 </div>

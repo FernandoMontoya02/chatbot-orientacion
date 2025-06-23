@@ -1,3 +1,4 @@
+// chatbot.component.ts
 import { Component, OnInit, ViewChild, ElementRef, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -5,8 +6,7 @@ import { ChatStorageService, Conversation } from '../services/chat-storage.servi
 import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
-import { QuestionService } from '../services/question.service';
-import { firstValueFrom } from 'rxjs';
+import html2pdf from 'html2pdf.js';
 
 @Component({
   selector: 'app-chatbot',
@@ -31,80 +31,54 @@ export class ChatbotComponent implements OnInit {
   showMenu = false;
   isLoading = false;
   processCompleted = false;
-  awaitingFollowUp = false;
   chatTerminado = false;
+  awaitingFollowUp = false;
   questionIndex = 0;
   userAnswers: Record<string, string> = {};
   questions: { key: string; text: string }[] = [];
+  isCollectingInterests = true;
+  interestsDescription = '';
 
-  constructor(
-    private chatStorage: ChatStorageService,
-    private questionService: QuestionService
-  ) { }
+  constructor(private chatStorage: ChatStorageService) { }
 
   async ngOnInit(): Promise<void> {
     this.conversations = this.chatStorage.getConversations();
-    await this.typeBotMessage('¡Hola! Soy tu orientador vocacional de la Universidad Técnica de Machala (UTMACH). ¿Cuál es tu nombre?');
-
-    try {
-      this.questions = await this.questionService.getRandomQuestionsByCompetence(16);
-    } catch (err) {
-      console.error('Error al cargar preguntas:', err);
-      await this.typeBotMessage('No se pudieron cargar las preguntas de la base de datos.');
-    }
+    this.resetChat();
 
     window.onbeforeunload = () => {
-      if (this.messages.length > 0 && this.hasName) {
-        this.chatStorage.saveConversation(this.userName, this.messages);
-      }
+      localStorage.removeItem('chat-conversations');
     };
   }
 
   private isAnswerValid(answer: string): boolean {
-    const lowAnswer = answer.toLowerCase().trim();
-
-    const invalidPhrases = [
-      'no entiendo',
-      'no comprendo',
-      'no se',
-      'no sé',
-      'no lo entiendo',
-      'no entendí',
-      'no te entiendo',
-      '???',
-      '...',
+    const text = answer.toLowerCase().trim();
+  
+    // Invalida si es muy corto
+    if (text.length < 5) return false;
+  
+    // Detecta si solo hay símbolos o números
+    if (/^[^a-záéíóúñ]+$/i.test(text)) return false;
+  
+    // Repeticiones tipo kkkkkk o zzzzzz
+    if (/(.)\1{4,}/.test(text)) return false;
+  
+    // Sin vocales, sin sentido
+    if (!/[aeiouáéíóú]/i.test(text)) return false;
+  
+    // Si tiene al menos 5 palabras, se considera válido aunque tenga frases como "no entiendo"
+    if (text.split(' ').length >= 5) return true;
+  
+    // Frases que se consideran vacías o evasivas si están solas o casi solas
+    const evasivas = [
+      'no sé', 'no se', 'no entiendo', 'no comprendo', 'no te entiendo',
+      'no lo sé', 'no lo se', 'no tengo idea', 'no respondí', 'no sabría decir',
+      'sí', 'si', 'no', 'tal vez', 'quizás'
     ];
-
-    for (const phrase of invalidPhrases) {
-      if (lowAnswer.includes(phrase)) {
-        return false;
-      }
-    }
-    if (lowAnswer.length <= 2) {
-      return false;
-    }
-    if (/^\d+$/.test(lowAnswer)) {
-      return false;
-    }
-    const vowelCount = (lowAnswer.match(/[aeiouáéíóú]/g) || []).length;
-    const hasSpaces = lowAnswer.includes(' ');
-
-    if (!hasSpaces && vowelCount < 2) {
-      return false;
-    }
-    if (/(.)\1{4,}/.test(lowAnswer)) {
-      return false;
-    }
-
-    if (/^[^a-z0-9áéíóúñ\s]+$/.test(lowAnswer)) {
-      return false;
-    }
-    const yesNoOnly = ['sí', 'si', 'no'];
-    if (yesNoOnly.includes(lowAnswer)) {
-      return false;
-    }
-    return true;
+  
+    // Verifica si la respuesta solo tiene alguna de esas evasivas
+    return !evasivas.some(f => text === f || text.includes(f));
   }
+  
 
   async sendMessage(): Promise<void> {
     if (!this.userMessage.trim() || this.chatTerminado) return;
@@ -116,21 +90,27 @@ export class ChatbotComponent implements OnInit {
 
     if (!this.hasName) {
       const extractedName = this.extractNameFromMessage(userText);
-
       if (extractedName) {
         this.userName = extractedName;
         this.hasName = true;
-
-        const intro = `
-¡Qué gusto conocerte, ${this.userName.split(' ')[0]}! 😊 Estoy aquí para ayudarte a descubrir qué carrera te va mejor.
-Antes, déjame hacerte algunas preguntas para conocerte mejor. ¿Listo?
-
-${this.questions[this.questionIndex].text}
-      `.trim();
-
-        await this.typeBotMessage(intro);
+        await this.typeBotMessage(
+          `¡Qué gusto conocerte, ${this.userName.split(' ')[0]}! 😊 Para ayudarte mejor, cuéntame: ¿cuáles son tus intereses, pasatiempos o aspiraciones profesionales?`
+        );
+        return;
       } else {
         await this.typeBotMessage('No entendí tu nombre. Por favor, dime cómo te llamas diciendo por ejemplo: "Me llamo Juan" o "Soy Ana".');
+        return;
+      }
+    }
+
+    if (this.isCollectingInterests) {
+      this.interestsDescription = userText;
+      this.isCollectingInterests = false;
+      await this.generateQuestionsFromInterests(userText);
+      if (this.questions.length > 0) {
+        await this.typeBotMessage(this.questions[0].text);
+      } else {
+        await this.typeBotMessage('No se pudieron generar preguntas. Por favor, intenta nuevamente o describe tus intereses de otra manera.');
       }
       return;
     }
@@ -141,44 +121,20 @@ ${this.questions[this.questionIndex].text}
 
       if (!isValid) {
         this.showInvalidAnswerMsg = true;
-
-        // Reformular la pregunta para ayudar al usuario
-        const reformulatedPrompt = `
-Eres un orientador vocacional empático y paciente de la Universidad Técnica de Machala (UTMACH).
-
-Has hecho esta pregunta al estudiante:
-
-"${currentQuestion.text}"
-
-El estudiante no entendió la pregunta. Sin mencionar que no entendió, explica la pregunta con más detalle, de manera clara y sencilla para que la comprenda mejor. Repite la pregunta al final para que pueda responder. Usa un tono amable y motivador.
-      `.trim(); // tu prompt para explicar la pregunta
+        const prompt = `Eres un orientador vocacional empático de la Universidad Técnica de Machala (UTMACH). Has hecho esta pregunta: "${currentQuestion.text}". El estudiante respondió de manera confusa. Reformula la pregunta con un ejemplo o explicándola mejor. Termina repitiéndola. Usa un tono amable. **No incluyas anotaciones internas ni explicaciones entre corchetes o paréntesis. Solo la reformulación para el estudiante.**`;
 
         try {
-          const res = await firstValueFrom(
-            this.http.post<{ response: string }>(
-              'https://chatbot-orientacion.onrender.com/api/chat',
-              { message: reformulatedPrompt }
-            )
-          );
-
-          const reformulated = res?.response || 'Déjame explicarlo mejor: ' + currentQuestion.text;
-          const html = await this.parseMarkdown(reformulated);
-          this.messages.push({ sender: 'bot', text: reformulated, html });
+          const res = await this.http.post<{ response: string }>('https://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
+          const html = await this.parseMarkdown(res?.response || currentQuestion.text);
+          this.messages.push({ sender: 'bot', text: res?.response || currentQuestion.text, html });
           this.scrollToBottom();
-        } catch (err) {
-          console.error('Error generando reformulación:', err);
-          await this.typeBotMessage('Déjame explicarlo de otra manera: ' + currentQuestion.text);
+        } catch {
+          await this.typeBotMessage('Déjame explicarlo mejor: ' + currentQuestion.text);
         }
-
-        // No avanzamos la pregunta ni guardamos respuesta inválida
         return;
       }
 
-
-      // Respuesta válida, ocultar mensaje de error
       this.showInvalidAnswerMsg = false;
-
-      // Guardar respuesta y avanzar
       this.userAnswers[currentQuestion.key] = userText;
       this.questionIndex++;
 
@@ -190,156 +146,104 @@ El estudiante no entendió la pregunta. Sin mencionar que no entendió, explica 
       }
 
       const nextQuestion = this.questions[this.questionIndex].text;
-      const naturalResponse = await this.generateNaturalResponse(
-        currentQuestion.text,
-        userText,
-        nextQuestion
-      );
-      await this.typeBotMessage(naturalResponse);
+      const natural = await this.generateNaturalResponse(currentQuestion.text, userText, nextQuestion);
+      await this.typeBotMessage(natural);
     } else if (this.awaitingFollowUp) {
-      const followUpPrompt = `
-El estudiante ha respondido después de recibir su recomendación:
-
-"${userText}"
-
-Por favor, responde de forma cálida, breve y útil como orientador vocacional. Si es una expresión como "gracias", responde de forma amable.
-    `.trim();
-
+      const prompt = `El estudiante respondió: "${userText}" luego de su recomendación vocacional. Responde de manera cálida y útil.`;
       try {
-        const res = await firstValueFrom(
-          this.http.post<{ response: string }>(
-            'https://chatbot-orientacion.onrender.com/api/chat',
-            { message: followUpPrompt }
-          )
-        );
-
-        const reply = res?.response || 'Gracias por tu mensaje.';
-        await this.typeBotMessage(reply);
-      } catch (err) {
-        console.error('Error en seguimiento:', err);
+        const res = await this.http.post<{ response: string }>('https://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
+        await this.typeBotMessage(res?.response || 'Gracias por tu mensaje.');
+      } catch {
         await this.typeBotMessage('Gracias por tu mensaje.');
       }
     }
   }
 
-
-
-
-
-  async generateNaturalResponse(currentQuestion: string, studentAnswer: string, nextQuestion: string): Promise<string> {
-    const prompt = `
-Eres un orientador vocacional cálido, empático y cercano de la Universidad Técnica de Machala (UTMACH). Tu tarea es continuar la conversación con el estudiante como si hablaras naturalmente con él.
-
-1. Comenta de forma empática y natural lo que respondió el estudiante, mostrando comprensión o validación.
-2. Luego, enlaza de manera suave con la siguiente pregunta, haciéndola parte del flujo de la charla.
-3. Usa un solo mensaje fluido y natural, no enumeres partes. No uses comillas.
-4. No agregues detalles que el estudiante no mencionó. Solo comenta lo que dijo, valorando su respuesta y empatizando.
-
-Pregunta: "${currentQuestion}"
-Respuesta del estudiante: "${studentAnswer}"
-Siguiente pregunta: "${nextQuestion}"
-    `.trim();
+  async generateQuestionsFromInterests(interests: string): Promise<void> {
+    const prompt = `Eres un orientador vocacional de UTMACH. A partir de esta descripción: "${interests}", genera 16 preguntas variadas y relevantes que te ayuden a conocer mejor al estudiante para orientarlo vocacionalmente. Devuélvelas en formato JSON como: [{"key": "pregunta1", "text": "¿Pregunta 1...?"}, ...]`;
 
     try {
-      const res = await firstValueFrom(
-        this.http.post<{ response: string }>(
-          'https://chatbot-orientacion.onrender.com/api/chat',
-          { message: prompt }
-        )
-      );
+      const res = await this.http.post<{ response: string }>('https://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
+      const raw = (res?.response || '').replace(/```json/g, '').replace(/```/g, '').trim();
+      const jsonPart = raw.split('\n').filter(line => !line.trim().startsWith('**Nota')).join('\n').trim();
 
-      return res?.response || 'Gracias por tu respuesta. Vamos con otra pregunta.';
+      try {
+        this.questions = JSON.parse(jsonPart);
+      } catch (jsonErr) {
+        console.error('JSON inválido:', jsonPart);
+        throw new Error('Error al convertir la respuesta a JSON');
+      }
     } catch (err) {
-      console.error('Error generando respuesta natural:', err);
+      console.error('Error generando preguntas:', err);
+      await this.typeBotMessage('Hubo un problema generando las preguntas. Por favor, intenta de nuevo.');
+    }
+  }
+
+  async generateNaturalResponse(pregunta: string, respuesta: string, siguiente: string): Promise<string> {
+    const prompt = `Eres un orientador cálido y natural de la UTMACH. Comenta con empatía la respuesta: "${respuesta}" a la pregunta: "${pregunta}". Luego enlaza naturalmente con la siguiente: "${siguiente}". Usa un solo mensaje, fluido y cercano. **No incluyas notas entre corchetes ni explicaciones entre paréntesis. Solo responde como si hablaras directamente al estudiante.**`;
+
+    try {
+      const res = await this.http.post<{ response: string }>('https://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
+      return res?.response || 'Gracias por tu respuesta. Vamos con otra pregunta.';
+    } catch {
       return 'Gracias por tu respuesta. Vamos con otra pregunta.';
     }
   }
 
   async finishAndSendToAPI(): Promise<void> {
-    const resumen = Object.entries(this.userAnswers)
-      .map(([k, v]) => `- ${k}: ${v}`)
-      .join('\n');
+    const resumen = Object.entries(this.userAnswers).map(([k, v]) => `- ${k}: ${v}`).join('\n');
+    const prompt = `Este es el resumen del estudiante:\n\n${resumen}\n\nCon base en esto, ¿qué carreras de la Universidad Técnica de Machala (UTMACH) le recomiendas? Redacta cálidamente y termina la conversación.`;
 
-    const promptFinal = `
-      Este es el resumen de las respuestas del estudiante. Redacta en español:
-      
-      ${resumen}
-      
-      Con base en esto, ¿qué carreras de la Universidad Técnica de Machala (UTMACH) se ajustan mejor a su perfil?
-      
-      Escribe como un orientador cálido, usando lenguaje sencillo, motivador y cercano. Al final, indica amablemente que esta conversación ha terminado y que si desea comenzar una nueva puede hacerlo con el botón "Nueva conversación" o recargando la página.
-      `.trim();
-
-    this.isLoading = false;
+    this.isLoading = true; // 👈 Activa el spinner
 
     try {
-      const res = await firstValueFrom(
-        this.http.post<{ response: string }>(
-          'https://chatbot-orientacion.onrender.com/api/chat',
-          { message: promptFinal }
-        )
-      );
-
-      this.isLoading = false;
-
-      if (res?.response) {
-        const html = await this.parseMarkdown(res.response);
-        this.messages.push({ sender: 'bot', text: res.response, html });
-        this.processCompleted = true;
-        this.chatStorage.saveConversation(this.userName, this.messages);
-        this.scrollToBottom();
-
-        // Enviar nombre y recomendación al backend, que lo reenvía a Google Sheets
-        await this.http.post('https://chatbot-orientacion.onrender.com/api/guardar-resultado', {
-          nombre: this.userName,
-          resultado: res.response
-        }).toPromise();
-
-      } else {
-        await this.typeBotMessage('No se pudo generar una recomendación de carreras.');
-      }
+      const res = await this.http.post<{ response: string }>('hhttps://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
+      const html = await this.parseMarkdown(res?.response || 'No se pudo generar una recomendación.');
+      this.messages.push({ sender: 'bot', text: res?.response || '', html });
+      this.processCompleted = true;
+      this.chatStorage.saveConversation(this.userName, this.messages);
+      await this.http.post('https://chatbot-orientacion.onrender.com/api/guardar-resultado', {
+        nombre: this.userName,
+        resultado: res?.response || ''
+      }).toPromise();
     } catch (err) {
-      this.isLoading = false;
-      console.error('Error al enviar resumen:', err);
-      await this.typeBotMessage('Ocurrió un error al analizar tus respuestas.');
+      await this.typeBotMessage('Ocurrió un error al generar tu recomendación.');
+    }finally {
+      this.isLoading = false; // 👈 Desactiva el spinner
+      this.scrollToBottom();
     }
+  }
+
+  extractNameFromMessage(message: string): string | null {
+    const match = message.trim().match(/(?:me llamo|soy)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ\s]+)/i);
+    if (match?.[1]) return match[1].trim();
+    const words = message.trim().split(' ');
+    if (words.length >= 2) return message.trim();
+    if (words.length === 1 && !['hola', 'hey'].includes(words[0].toLowerCase())) return words[0];
+    return null;
   }
 
   async typeBotMessage(text: string): Promise<void> {
     const speed = 5;
     let displayed = '';
-    const message: { sender: 'bot'; text: string; html?: SafeHtml } = { sender: 'bot', text: '' };
+    const message: { sender: 'bot'; text: string; html?: SafeHtml } = {
+      sender: 'bot',
+      text: '',
+      html: undefined,
+    };
     this.messages.push(message);
-
+  
     for (let i = 0; i < text.length; i++) {
       displayed += text[i];
       message.text = displayed;
       if (i % 5 === 0) this.scrollToBottom();
       await new Promise((r) => setTimeout(r, speed));
     }
+  
+    // NUEVO: formatear Markdown
+    message.html = await this.parseMarkdown(text);
     this.scrollToBottom();
-  }
-
-  extractNameFromMessage(message: string): string | null {
-    const trimmed = message.trim();
-    const match = trimmed.match(/(?:me llamo|soy)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ\s]+)/i);
-    if (match && match[1]) {
-      return match[1].trim();
-    }
-
-    const words = trimmed.split(' ');
-    const greetings = ['hola', 'hey', 'buenos', 'buenas', 'saludos', 'buen día', 'buenas tardes', 'buenas noches'];
-
-    if (words.length >= 2 && !greetings.includes(words[0].toLowerCase())) {
-      return trimmed;
-    }
-
-    if (words.length === 1 && !greetings.includes(words[0].toLowerCase())) {
-      return words[0];
-    }
-
-    return null;
-  }
+  }  
 
   async parseMarkdown(text: string): Promise<SafeHtml> {
     const html = await marked.parse(text);
@@ -350,9 +254,7 @@ Siguiente pregunta: "${nextQuestion}"
     setTimeout(() => {
       try {
         this.chatContainer.nativeElement.scrollTop = this.chatContainer.nativeElement.scrollHeight;
-      } catch (err) {
-        console.warn('Error al hacer scroll:', err);
-      }
+      } catch {}
     }, 100);
   }
 
@@ -366,15 +268,19 @@ Siguiente pregunta: "${nextQuestion}"
     this.currentConversation = null;
     this.processCompleted = false;
     this.chatTerminado = false;
-
-    this.questionService.getRandomQuestionsByCompetence(16).then((questions) => {
-      this.questions = questions;
-      this.typeBotMessage('¡Hola! Soy tu orientador vocacional de la Universidad Técnica de Machala (UTMACH). ¿Cuál es tu nombre?');
-    }).catch((err) => {
-      console.error('Error al cargar preguntas:', err);
-      this.typeBotMessage('No se pudieron cargar las preguntas de la base de datos.');
-    });
+    this.isCollectingInterests = true;
+    this.interestsDescription = '';
+    this.questions = [];
+    this.typeBotMessage('¡Hola! Soy tu orientador vocacional de la Universidad Técnica de Machala (UTMACH). ¿Cuál es tu nombre?');
   }
+
+  confirmarResetChat(): void {
+    const confirmado = confirm('¿Estás seguro de que deseas eliminar la conversación actual?');
+    if (confirmado) {
+      this.resetChat();
+    }
+  }
+  
 
   toggleMenu(): void {
     this.showMenu = !this.showMenu;
@@ -385,11 +291,9 @@ Siguiente pregunta: "${nextQuestion}"
     if (previous.length > 0) {
       this.userName = userName;
       this.hasName = true;
-
       this.messages = await Promise.all(previous.map(async (msg) =>
         msg.sender === 'bot' ? { ...msg, html: await this.parseMarkdown(msg.text) } : msg
       ));
-
       this.currentConversation = { userName, messages: this.messages };
       this.scrollToBottom();
     }
@@ -402,4 +306,33 @@ Siguiente pregunta: "${nextQuestion}"
       if (this.currentConversation?.userName === userName) this.resetChat();
     }
   }
+
+  copiarConversacion(): void {
+    const textoPlano = this.messages
+      .map(msg => `${msg.sender === 'user' ? 'Usuario' : 'Bot'}: ${msg.text}`)
+      .join('\n');
+  
+    navigator.clipboard.writeText(textoPlano).then(() => {
+      alert('¡La conversación ha sido copiada al portapapeles!');
+    }).catch(() => {
+      alert('No se pudo copiar la conversación.');
+    });
+  }
+
+  generarPDF(): void {
+    const element = document.getElementById('chatTranscript');
+    if (!element) return;
+  
+    const opt = {
+      margin:       0.5,
+      filename:     `chat_${this.userName || 'estudiante'}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2 },
+      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' },
+      pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+  
+    html2pdf().set(opt).from(element).save();
+  }  
+  
 }

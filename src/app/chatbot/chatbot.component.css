@@ -397,17 +397,25 @@
     font-size: 14px !important;
   }
   /* Indicador de progreso de pregunta */
-.progress-indicator {
-  background-color: #53aae1;
-  color: white;
-  padding: 6px 12px;
-  font-weight: bold;
-  border-radius: 12px;
-  margin: 12px 20px 8px 20px;
-  font-size: 14px;
-  text-align: center;
-  user-select: none;
-}
+  .progress-indicator {
+    text-align: center;
+    background-color: #f0f7f4;
+    color: #1a4f3f;
+    font-weight: bold;
+    padding: 0.6rem 1rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    margin: 1rem auto;
+    width: fit-content;
+    font-size: 1rem;
+    animation: fadeIn 0.4s ease-in;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  
 
 /* Mensaje visible para respuesta inválida */
 .invalid-answer-message {
@@ -434,3 +442,20 @@
 
 }
 
+.chat-actions {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.chat-actions button {
+  padding: 0.5rem 1rem;
+  background-color: #2d8a4f;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.chat-actions button:hover {
+  background-color: #256e3e;
+}
