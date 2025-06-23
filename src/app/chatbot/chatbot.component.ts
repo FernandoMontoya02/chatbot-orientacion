@@ -197,7 +197,7 @@ export class ChatbotComponent implements OnInit {
     this.isLoading = true; // 👈 Activa el spinner
 
     try {
-      const res = await this.http.post<{ response: string }>('hhttps://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
+      const res = await this.http.post<{ response: string }>('https://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
       const html = await this.parseMarkdown(res?.response || 'No se pudo generar una recomendación.');
       this.messages.push({ sender: 'bot', text: res?.response || '', html });
       this.processCompleted = true;
