@@ -19,7 +19,6 @@ interface ChatState {
   chatTerminado?: boolean;  // <--- Aquí lo agregas
 }
 
-
 @Component({
   selector: 'app-chatbot',
   standalone: true,
@@ -28,8 +27,9 @@ interface ChatState {
   styleUrls: ['./chatbot.component.css'],
 })
 export class ChatbotComponent implements OnInit {
-  private http = inject(HttpClient);
-  private sanitizer = inject(DomSanitizer);
+private chatStorage = inject(ChatStorageService);
+private http = inject(HttpClient);
+private sanitizer = inject(DomSanitizer);
 
   @ViewChild('chatContainer') chatContainer!: ElementRef;
 
@@ -51,50 +51,31 @@ export class ChatbotComponent implements OnInit {
   isCollectingInterests = true;
   interestsDescription = '';
 
-  constructor(private chatStorage: ChatStorageService) { }
 
-  async ngOnInit(): Promise<void> {
-    const savedState = localStorage.getItem('chat-state');
-    if (savedState) {
-      try {
-        const state: ChatState = JSON.parse(savedState);
-        this.userName = state.userName;
-        this.messages = await Promise.all(state.messages.map(async msg =>
-          msg.sender === 'bot' ? { ...msg, html: await this.parseMarkdown(msg.text) } : msg
-        ));
-        this.userAnswers = state.userAnswers;
-        this.questionIndex = state.questionIndex;
-        this.questions = state.questions;
-        this.interestsDescription = state.interestsDescription;
-        this.hasName = state.hasName;
-        this.isCollectingInterests = state.isCollectingInterests;
-        this.chatTerminado = state.chatTerminado ?? false; // Restaurar si existe
-      } catch (error) {
-        console.error('Error al cargar estado guardado:', error);
-        this.resetChat();
-      }
-    } else {
-      this.resetChat();
-    }
 
-    this.scrollToBottom();
-    this.conversations = this.chatStorage.getConversations();
-  }
+async ngOnInit(): Promise<void> {
+  this.conversations = this.chatStorage.getConversations();
+  await this.typeBotMessage('¡Hola! Selecciona un usuario del historial o escribe tu nombre para empezar.');
+}
 
   private saveState(): void {
-    const state: ChatState = {
-      userName: this.userName,
-      messages: this.messages.map(m => ({ sender: m.sender, text: m.text })),
-      userAnswers: this.userAnswers,
-      questionIndex: this.questionIndex,
-      questions: this.questions,
-      interestsDescription: this.interestsDescription,
-      hasName: this.hasName,
-      isCollectingInterests: this.isCollectingInterests,
-      chatTerminado: this.chatTerminado // <--- Y aquí
-    };
-    localStorage.setItem('chat-state', JSON.stringify(state));
-  }
+  if (!this.userName) return;
+
+  const state: ChatState = {
+    userName: this.userName,
+    messages: this.messages.map(m => ({ sender: m.sender, text: m.text })),
+    userAnswers: this.userAnswers,
+    questionIndex: this.questionIndex,
+    questions: this.questions,
+    interestsDescription: this.interestsDescription,
+    hasName: this.hasName,
+    isCollectingInterests: this.isCollectingInterests,
+    chatTerminado: this.chatTerminado
+  };
+
+  localStorage.setItem(`chat-state-${this.userName}`, JSON.stringify(state));
+}
+
 
   private isAnswerValid(answer: string): boolean {
     const text = answer.toLowerCase().trim();
@@ -138,22 +119,21 @@ export class ChatbotComponent implements OnInit {
     this.userMessage = '';
     this.scrollToBottom();
 
-    if (!this.hasName) {
-      const extractedName = this.extractNameFromMessage(userText);
-      if (extractedName) {
-        this.userName = extractedName;
-        this.hasName = true;
-        this.chatStorage.saveConversation(this.userName, this.messages);
-        this.currentConversation = { userName: this.userName, messages: this.messages };
-        await this.typeBotMessage(
-          `¡Qué gusto conocerte, ${this.userName.split(' ')[0]}! 😊 Para ayudarte mejor, cuéntame: ¿cuáles son tus intereses, pasatiempos o aspiraciones profesionales?`
-        );
-        this.saveState();
-        return;
-      } else {
-        await this.typeBotMessage('No entendí tu nombre. Por favor, dime cómo te llamas diciendo por ejemplo: "Me llamo Juan" o "Soy Ana".');
-        return;
-      }
+if (!this.hasName) {
+  const extractedName = this.extractNameFromMessage(userText);
+  if (extractedName) {
+    this.userName = extractedName;  // Aquí está el nombre limpio
+    this.hasName = true;
+    this.saveState();
+    this.chatStorage.saveConversation(this.userName, this.messages);
+    this.currentConversation = { userName: this.userName, messages: this.messages };
+    await this.typeBotMessage(`¡Qué gusto conocerte, ${this.userName.split(' ')[0]}! 😊 Para ayudarte mejor, cuéntame: ¿cuáles son tus intereses, pasatiempos o aspiraciones profesionales?`);
+    this.saveState();
+    return;
+  } else {
+    await this.typeBotMessage('No entendí tu nombre. Por favor, dime cómo te llamas diciendo por ejemplo: "Me llamo Juan" o "Soy Ana".');
+    return;
+  }
     }
 
     if (this.isCollectingInterests) {
@@ -269,14 +249,15 @@ export class ChatbotComponent implements OnInit {
     }
   }
 
-  extractNameFromMessage(message: string): string | null {
-    const match = message.trim().match(/(?:me llamo|soy)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ\s]+)/i);
-    if (match?.[1]) return match[1].trim();
-    const words = message.trim().split(' ');
-    if (words.length >= 2) return message.trim();
-    if (words.length === 1 && !['hola', 'hey'].includes(words[0].toLowerCase())) return words[0];
-    return null;
-  }
+extractNameFromMessage(message: string): string | null {
+  const match = message.trim().match(/(?:me llamo|soy)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ\s]+)/i);
+  if (match?.[1]) return match[1].trim();
+  const words = message.trim().split(' ');
+  if (words.length >= 2) return message.trim();
+  if (words.length === 1 && !['hola', 'hey'].includes(words[0].toLowerCase())) return words[0];
+  return null;
+}
+
 
   async typeBotMessage(text: string): Promise<void> {
     const speed = 5;
@@ -327,7 +308,6 @@ export class ChatbotComponent implements OnInit {
     this.interestsDescription = '';
     this.questions = [];
     this.typeBotMessage('¡Hola! Soy tu orientador vocacional de la Universidad Técnica de Machala (UTMACH). ¿Cuál es tu nombre?');
-    localStorage.removeItem('chat-state');
   }
 
   confirmarResetChat(): void {
@@ -342,26 +322,40 @@ export class ChatbotComponent implements OnInit {
     this.showMenu = !this.showMenu;
   }
 
-  async loadConversation(userName: string): Promise<void> {
-    const previous = this.chatStorage.getConversationByUser(userName);
-    if (previous.length > 0) {
-      this.userName = userName;
-      this.hasName = true;
-      this.messages = await Promise.all(previous.map(async (msg) =>
+ async loadConversation(userName: string): Promise<void> {
+  const savedState = localStorage.getItem(`chat-state-${userName}`);
+  if (savedState) {
+    try {
+      const state: ChatState = JSON.parse(savedState);
+      this.userName = state.userName;
+      this.messages = await Promise.all(state.messages.map(async msg =>
         msg.sender === 'bot' ? { ...msg, html: await this.parseMarkdown(msg.text) } : msg
       ));
-      this.currentConversation = { userName, messages: this.messages };
+      this.userAnswers = state.userAnswers;
+      this.questionIndex = state.questionIndex;
+      this.questions = state.questions;
+      this.interestsDescription = state.interestsDescription;
+      this.hasName = state.hasName;
+      this.isCollectingInterests = state.isCollectingInterests;
+      this.chatTerminado = state.chatTerminado ?? false;
       this.scrollToBottom();
+    } catch (error) {
+      console.error('Error cargando estado guardado:', error);
+      this.resetChat();
     }
+  } else {
+    await this.typeBotMessage('No se encontró una conversación guardada para este usuario.');
   }
+}
 
-  deleteConversation(userName: string): void {
-    if (confirm(`¿Eliminar la conversación con "${userName}"?`)) {
-      this.chatStorage.deleteConversation(userName);
-      this.conversations = this.chatStorage.getConversations();
-      if (this.currentConversation?.userName === userName) this.resetChat();
-    }
+deleteConversation(userName: string): void {
+  if (confirm(`¿Eliminar la conversación con "${userName}"?`)) {
+    this.chatStorage.deleteConversation(userName);
+    localStorage.removeItem(`chat-state-${userName}`);
+    this.conversations = this.chatStorage.getConversations();
+    if (this.currentConversation?.userName === userName) this.resetChat();
   }
+}
 
   copiarConversacion(): void {
     const textoPlano = this.messages
