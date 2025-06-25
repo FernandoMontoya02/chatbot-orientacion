@@ -22,7 +22,7 @@
           </button>
           <button class="delete-btn" (click)="deleteConversation(conversation.userName)">✖</button>
         </div>
-      </li>      
+      </li>
     </ul>
   </div>
 
@@ -32,7 +32,7 @@
     <div class="progress-indicator" *ngIf="hasName && !chatTerminado && questions.length > 0">
       Pregunta {{ questionIndex + 1 }} de {{ questions.length }}
     </div>
-    
+
 
     <!-- Mensaje para respuesta inválida (controlado desde TS) -->
     <div class="invalid-answer-message" *ngIf="showInvalidAnswerMsg">
@@ -50,10 +50,11 @@
     </div>
 
     <div class="chat-actions" *ngIf="chatTerminado">
+      <p class="final-msg">🎓 ¡Tu orientación está lista! Puedes copiarla o descargarla en PDF.</p>
       <button (click)="copiarConversacion()">📋 Copiar texto</button>
       <button (click)="generarPDF()">📄 Generar PDF</button>
     </div>
-    
+
 
     <!-- Indicador de carga -->
     <div class="loading-indicator" *ngIf="isLoading">
@@ -62,15 +63,10 @@
     </div>
 
     <div class="input-container">
-      <input
-        type="text"
-        [(ngModel)]="userMessage"
-        (keydown.enter)="sendMessage()"
-        placeholder="Escribe tu mensaje..."
-        class="message-input"
-        [disabled]="chatTerminado || isLoading"
-      />
-      <button class="send-btn" (click)="sendMessage()" aria-label="Enviar mensaje" [disabled]="chatTerminado || isLoading || !userMessage.trim()">➤</button>
+      <input type="text" [(ngModel)]="userMessage" (keydown.enter)="sendMessage()" placeholder="Escribe tu mensaje..."
+        class="message-input" [disabled]="chatTerminado || isLoading" />
+      <button class="send-btn" (click)="sendMessage()" aria-label="Enviar mensaje"
+        [disabled]="chatTerminado || isLoading || !userMessage.trim()">➤</button>
       <button class="clear-btn" (click)="confirmarResetChat()">Nueva conversación</button>
     </div>
   </div>

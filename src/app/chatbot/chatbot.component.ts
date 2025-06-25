@@ -1,4 +1,3 @@
-// chatbot.component.ts
 import { Component, OnInit, ViewChild, ElementRef, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -7,6 +6,19 @@ import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import html2pdf from 'html2pdf.js';
+
+interface ChatState {
+  userName: string;
+  messages: { sender: 'user' | 'bot'; text: string }[];
+  userAnswers: Record<string, string>;
+  questionIndex: number;
+  questions: { key: string; text: string }[];
+  interestsDescription: string;
+  hasName: boolean;
+  isCollectingInterests: boolean;
+  chatTerminado?: boolean;  // <--- Aquí lo agregas
+}
+
 
 @Component({
   selector: 'app-chatbot',
@@ -42,26 +54,60 @@ export class ChatbotComponent implements OnInit {
   constructor(private chatStorage: ChatStorageService) { }
 
   async ngOnInit(): Promise<void> {
-    this.conversations = this.chatStorage.getConversations();
-    this.resetChat();
+    const savedState = localStorage.getItem('chat-state');
+    if (savedState) {
+      try {
+        const state: ChatState = JSON.parse(savedState);
+        this.userName = state.userName;
+        this.messages = await Promise.all(state.messages.map(async msg =>
+          msg.sender === 'bot' ? { ...msg, html: await this.parseMarkdown(msg.text) } : msg
+        ));
+        this.userAnswers = state.userAnswers;
+        this.questionIndex = state.questionIndex;
+        this.questions = state.questions;
+        this.interestsDescription = state.interestsDescription;
+        this.hasName = state.hasName;
+        this.isCollectingInterests = state.isCollectingInterests;
+        this.chatTerminado = state.chatTerminado ?? false; // Restaurar si existe
+      } catch (error) {
+        console.error('Error al cargar estado guardado:', error);
+        this.resetChat();
+      }
+    } else {
+      this.resetChat();
+    }
 
-    window.onbeforeunload = () => {
-      localStorage.removeItem('chat-conversations');
+    this.scrollToBottom();
+    this.conversations = this.chatStorage.getConversations();
+  }
+
+  private saveState(): void {
+    const state: ChatState = {
+      userName: this.userName,
+      messages: this.messages.map(m => ({ sender: m.sender, text: m.text })),
+      userAnswers: this.userAnswers,
+      questionIndex: this.questionIndex,
+      questions: this.questions,
+      interestsDescription: this.interestsDescription,
+      hasName: this.hasName,
+      isCollectingInterests: this.isCollectingInterests,
+      chatTerminado: this.chatTerminado // <--- Y aquí
     };
+    localStorage.setItem('chat-state', JSON.stringify(state));
   }
 
   private isAnswerValid(answer: string): boolean {
     const text = answer.toLowerCase().trim();
-  
+
     // Detecta si solo hay símbolos o números
     if (/^[^a-záéíóúñ]+$/i.test(text)) return false;
-  
+
     // Repeticiones tipo kkkkkk o zzzzzz
     if (/(.)\1{4,}/.test(text)) return false;
-  
+
     // Sin vocales, sin sentido
     if (!/[aeiouáéíóú]/i.test(text)) return false;
-  
+
     // Frases evasivas (no válidas)
     const evasivas = [
       'no sé', 'no se', 'no entiendo', 'no comprendo', 'no te entiendo',
@@ -69,20 +115,20 @@ export class ChatbotComponent implements OnInit {
       'sí', 'si', 'no', 'tal vez', 'quizás'
     ];
     if (evasivas.includes(text)) return false;
-  
+
     // Si contiene al menos una palabra relevante, se acepta (aunque sea corta)
     const palabrasClave = ['innovación', 'creación', 'imaginación', 'lógica', 'análisis', 'arte', 'música', 'tecnología'];
     if (palabrasClave.some(p => text.includes(p))) return true;
-  
+
     // Si tiene al menos 5 palabras, también es válida
     if (text.split(/\s+/).length >= 5) return true;
-  
+
     // Si es una sola palabra significativa (no evasiva), se acepta
     if (text.length >= 4 && text.split(' ').length === 1) return true;
-  
+
     return false;
   }
-  
+
 
   async sendMessage(): Promise<void> {
     if (!this.userMessage.trim() || this.chatTerminado) return;
@@ -97,9 +143,12 @@ export class ChatbotComponent implements OnInit {
       if (extractedName) {
         this.userName = extractedName;
         this.hasName = true;
+        this.chatStorage.saveConversation(this.userName, this.messages);
+        this.currentConversation = { userName: this.userName, messages: this.messages };
         await this.typeBotMessage(
           `¡Qué gusto conocerte, ${this.userName.split(' ')[0]}! 😊 Para ayudarte mejor, cuéntame: ¿cuáles son tus intereses, pasatiempos o aspiraciones profesionales?`
         );
+        this.saveState();
         return;
       } else {
         await this.typeBotMessage('No entendí tu nombre. Por favor, dime cómo te llamas diciendo por ejemplo: "Me llamo Juan" o "Soy Ana".');
@@ -116,6 +165,7 @@ export class ChatbotComponent implements OnInit {
       } else {
         await this.typeBotMessage('No se pudieron generar preguntas. Por favor, intenta nuevamente o describe tus intereses de otra manera.');
       }
+      this.saveState();
       return;
     }
 
@@ -125,8 +175,7 @@ export class ChatbotComponent implements OnInit {
 
       if (!isValid) {
         this.showInvalidAnswerMsg = true;
-        const prompt = `Eres un orientador vocacional empático de la Universidad Técnica de Machala (UTMACH). Has hecho esta pregunta: "${currentQuestion.text}". El estudiante respondió de manera confusa. Reformula la pregunta con un ejemplo o explicándola mejor. Termina repitiéndola. Usa un tono amable. **No incluyas anotaciones internas ni explicaciones entre corchetes o paréntesis. Solo la reformulación para el estudiante.**`;
-
+        const prompt = `Eres un orientador vocacional empático de la Universidad Técnica de Machala (UTMACH). Has hecho esta pregunta: "${currentQuestion.text}". El estudiante respondió de forma confusa. Reformula la pregunta de forma más clara, con un ejemplo breve (máximo 15 palabras). Usa un tono amable y directo. Solo entrega la reformulación, no expliques ni incluyas notas.`;
         try {
           const res = await this.http.post<{ response: string }>('https://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
           const html = await this.parseMarkdown(res?.response || currentQuestion.text);
@@ -142,8 +191,10 @@ export class ChatbotComponent implements OnInit {
       this.userAnswers[currentQuestion.key] = userText;
       this.questionIndex++;
 
+      this.saveState();
+
       if (this.questionIndex >= this.questions.length) {
-        await this.typeBotMessage('Gracias por compartir todo eso conmigo. Déjame analizar tus respuestas...');
+        await this.typeBotMessage('¡Gracias por contarme tanto sobre ti! Dame un momentito para analizar todo y darte una recomendación especial 😉”');
         await this.finishAndSendToAPI();
         this.chatTerminado = true;
         return;
@@ -152,6 +203,7 @@ export class ChatbotComponent implements OnInit {
       const nextQuestion = this.questions[this.questionIndex].text;
       const natural = await this.generateNaturalResponse(currentQuestion.text, userText, nextQuestion);
       await this.typeBotMessage(natural);
+      this.saveState();
     } else if (this.awaitingFollowUp) {
       const prompt = `El estudiante respondió: "${userText}" luego de su recomendación vocacional. Responde de manera cálida y útil.`;
       try {
@@ -164,8 +216,7 @@ export class ChatbotComponent implements OnInit {
   }
 
   async generateQuestionsFromInterests(interests: string): Promise<void> {
-    const prompt = `Eres un orientador vocacional de UTMACH. A partir de esta descripción: "${interests}", genera 16 preguntas variadas y relevantes que te ayuden a conocer mejor al estudiante para orientarlo vocacionalmente. Devuélvelas en formato JSON como: [{"key": "pregunta1", "text": "¿Pregunta 1...?"}, ...]`;
-
+    const prompt = `Eres un orientador vocacional de UTMACH. A partir de esta descripción: "${interests}", genera 16 preguntas vocacionales variadas. Reformula cada una para que sea clara y tenga ejemplos entre paréntesis. Ejemplo: "¿Qué te gusta más al programar? (crear apps, resolver problemas, automatizar cosas)". Devuelve en formato JSON: [{"key": "pregunta1", "text": "¿...?"}, ...]`;
     try {
       const res = await this.http.post<{ response: string }>('https://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
       const raw = (res?.response || '').replace(/```json/g, '').replace(/```/g, '').trim();
@@ -184,8 +235,7 @@ export class ChatbotComponent implements OnInit {
   }
 
   async generateNaturalResponse(pregunta: string, respuesta: string, siguiente: string): Promise<string> {
-    const prompt = `Eres un orientador cálido y natural de la UTMACH. Comenta con empatía y brevemente la respuesta: "${respuesta}" a la pregunta: "${pregunta}". Luego enlaza de forma fluida y sencilla con la siguiente: "${siguiente}". Sé directo pero humano, sin extenderte demasiado. Usa un solo mensaje, natural y cercano. No incluyas notas ni corchetes.`;
-
+    const prompt = `Eres un orientador cálido y directo de la UTMACH. Responde con una reacción corta a lo que el estudiante dijo: "${respuesta}" a la pregunta: "${pregunta}". Luego enlaza de forma natural con esta nueva pregunta: "${siguiente}". Usa una sola oración para reaccionar (ej: “¡Qué interesante!”) y otra para introducir la siguiente. No te extiendas ni incluyas explicaciones técnicas.`;
     try {
       const res = await this.http.post<{ response: string }>('https://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
       return res?.response || 'Gracias por tu respuesta. Vamos con otra pregunta.';
@@ -212,9 +262,10 @@ export class ChatbotComponent implements OnInit {
       }).toPromise();
     } catch (err) {
       await this.typeBotMessage('Ocurrió un error al generar tu recomendación.');
-    }finally {
+    } finally {
       this.isLoading = false; // 👈 Desactiva el spinner
       this.scrollToBottom();
+      this.saveState();
     }
   }
 
@@ -236,18 +287,18 @@ export class ChatbotComponent implements OnInit {
       html: undefined,
     };
     this.messages.push(message);
-  
+
     for (let i = 0; i < text.length; i++) {
       displayed += text[i];
       message.text = displayed;
       if (i % 5 === 0) this.scrollToBottom();
       await new Promise((r) => setTimeout(r, speed));
     }
-  
+
     // NUEVO: formatear Markdown
     message.html = await this.parseMarkdown(text);
     this.scrollToBottom();
-  }  
+  }
 
   async parseMarkdown(text: string): Promise<SafeHtml> {
     const html = await marked.parse(text);
@@ -258,7 +309,7 @@ export class ChatbotComponent implements OnInit {
     setTimeout(() => {
       try {
         this.chatContainer.nativeElement.scrollTop = this.chatContainer.nativeElement.scrollHeight;
-      } catch {}
+      } catch { }
     }, 100);
   }
 
@@ -276,6 +327,7 @@ export class ChatbotComponent implements OnInit {
     this.interestsDescription = '';
     this.questions = [];
     this.typeBotMessage('¡Hola! Soy tu orientador vocacional de la Universidad Técnica de Machala (UTMACH). ¿Cuál es tu nombre?');
+    localStorage.removeItem('chat-state');
   }
 
   confirmarResetChat(): void {
@@ -284,7 +336,7 @@ export class ChatbotComponent implements OnInit {
       this.resetChat();
     }
   }
-  
+
 
   toggleMenu(): void {
     this.showMenu = !this.showMenu;
@@ -315,7 +367,7 @@ export class ChatbotComponent implements OnInit {
     const textoPlano = this.messages
       .map(msg => `${msg.sender === 'user' ? 'Usuario' : 'Bot'}: ${msg.text}`)
       .join('\n');
-  
+
     navigator.clipboard.writeText(textoPlano).then(() => {
       alert('¡La conversación ha sido copiada al portapapeles!');
     }).catch(() => {
@@ -326,17 +378,17 @@ export class ChatbotComponent implements OnInit {
   generarPDF(): void {
     const element = document.getElementById('chatTranscript');
     if (!element) return;
-  
+
     const opt = {
-      margin:       0.5,
-      filename:     `chat_${this.userName || 'estudiante'}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2 },
-      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' },
-      pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+      margin: 0.5,
+      filename: `chat_${this.userName || 'estudiante'}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
     };
-  
+
     html2pdf().set(opt).from(element).save();
-  }  
-  
+  }
+
 }
