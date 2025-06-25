@@ -76,39 +76,29 @@ async ngOnInit(): Promise<void> {
   localStorage.setItem(`chat-state-${this.userName}`, JSON.stringify(state));
 }
 
+async validateAnswerWithAI(question: string, answer: string): Promise<boolean> {
+  const prompt = `
+Eres un orientador vocacional de la Universidad Técnica de Machala (UTMACH).
+Analiza la siguiente respuesta a esta pregunta:
+Pregunta: "${question}"
+Respuesta del estudiante: "${answer}"
+¿Es válida, coherente y útil esta respuesta para continuar con la orientación vocacional? Responde sólo con "sí" o "no".
+`;
 
-  private isAnswerValid(answer: string): boolean {
-    const text = answer.toLowerCase().trim();
+  try {
+    const res = await this.http.post<{ response: string }>(
+      'https://chatbot-orientacion.onrender.com/api/chat',
+      { message: prompt }
+    ).toPromise();
 
-    // Detecta si solo hay símbolos o números
-    if (/^[^a-záéíóúñ]+$/i.test(text)) return false;
-
-    // Repeticiones tipo kkkkkk o zzzzzz
-    if (/(.)\1{4,}/.test(text)) return false;
-
-    // Sin vocales, sin sentido
-    if (!/[aeiouáéíóú]/i.test(text)) return false;
-
-    // Frases evasivas (no válidas)
-    const evasivas = [
-      'no sé', 'no se', 'no entiendo', 'no comprendo', 'no te entiendo',
-      'no lo sé', 'no lo se', 'no tengo idea', 'no respondí', 'no sabría decir',
-      'sí', 'si', 'no', 'tal vez', 'quizás'
-    ];
-    if (evasivas.includes(text)) return false;
-
-    // Si contiene al menos una palabra relevante, se acepta (aunque sea corta)
-    const palabrasClave = ['innovación', 'creación', 'imaginación', 'lógica', 'análisis', 'arte', 'música', 'tecnología'];
-    if (palabrasClave.some(p => text.includes(p))) return true;
-
-    // Si tiene al menos 5 palabras, también es válida
-    if (text.split(/\s+/).length >= 5) return true;
-
-    // Si es una sola palabra significativa (no evasiva), se acepta
-    if (text.length >= 4 && text.split(' ').length === 1) return true;
-
+    const reply = res?.response.toLowerCase().trim() || '';
+    return reply.startsWith('sí') || reply.startsWith('si');
+  } catch (error) {
+    console.error('Error al validar respuesta con IA:', error);
+    // En caso de error, puedes decidir si aceptar o rechazar
     return false;
   }
+}
 
 
   async sendMessage(): Promise<void> {
@@ -149,23 +139,25 @@ if (!this.hasName) {
       return;
     }
 
-    if (this.questionIndex < this.questions.length) {
-      const currentQuestion = this.questions[this.questionIndex];
-      const isValid = this.isAnswerValid(userText);
+if (this.questionIndex < this.questions.length) {
+  const currentQuestion = this.questions[this.questionIndex];
 
-      if (!isValid) {
-        this.showInvalidAnswerMsg = true;
-        const prompt = `Eres un orientador vocacional empático de la Universidad Técnica de Machala (UTMACH). Has hecho esta pregunta: "${currentQuestion.text}". El estudiante respondió de forma confusa. Reformula la pregunta de forma más clara, con un ejemplo breve (máximo 15 palabras). Usa un tono amable y directo. Solo entrega la reformulación, no expliques ni incluyas notas.`;
-        try {
-          const res = await this.http.post<{ response: string }>('https://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
-          const html = await this.parseMarkdown(res?.response || currentQuestion.text);
-          this.messages.push({ sender: 'bot', text: res?.response || currentQuestion.text, html });
-          this.scrollToBottom();
-        } catch {
-          await this.typeBotMessage('Déjame explicarlo mejor: ' + currentQuestion.text);
-        }
-        return;
-      }
+  // Validar con IA en lugar de isAnswerValid()
+  const isValid = await this.validateAnswerWithAI(currentQuestion.text, userText);
+
+  if (!isValid) {
+    this.showInvalidAnswerMsg = true;
+    const prompt = `Eres un orientador vocacional empático de la Universidad Técnica de Machala (UTMACH). Has hecho esta pregunta: "${currentQuestion.text}". El estudiante respondió de forma confusa: "${userText}". Reformula la pregunta de forma más clara, con un ejemplo breve (máximo 15 palabras). Usa un tono amable y directo. Solo entrega la reformulación, no expliques ni incluyas notas.`;
+    try {
+      const res = await this.http.post<{ response: string }>('https://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
+      const html = await this.parseMarkdown(res?.response || currentQuestion.text);
+      this.messages.push({ sender: 'bot', text: res?.response || currentQuestion.text, html });
+      this.scrollToBottom();
+    } catch {
+      await this.typeBotMessage('Déjame explicarlo mejor: ' + currentQuestion.text);
+    }
+    return;
+  }
 
       this.showInvalidAnswerMsg = false;
       this.userAnswers[currentQuestion.key] = userText;
