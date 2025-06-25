@@ -53,9 +53,6 @@ export class ChatbotComponent implements OnInit {
   private isAnswerValid(answer: string): boolean {
     const text = answer.toLowerCase().trim();
   
-    // Invalida si es muy corto
-    if (text.length < 5) return false;
-  
     // Detecta si solo hay símbolos o números
     if (/^[^a-záéíóúñ]+$/i.test(text)) return false;
   
@@ -65,18 +62,25 @@ export class ChatbotComponent implements OnInit {
     // Sin vocales, sin sentido
     if (!/[aeiouáéíóú]/i.test(text)) return false;
   
-    // Si tiene al menos 5 palabras, se considera válido aunque tenga frases como "no entiendo"
-    if (text.split(' ').length >= 5) return true;
-  
-    // Frases que se consideran vacías o evasivas si están solas o casi solas
+    // Frases evasivas (no válidas)
     const evasivas = [
       'no sé', 'no se', 'no entiendo', 'no comprendo', 'no te entiendo',
       'no lo sé', 'no lo se', 'no tengo idea', 'no respondí', 'no sabría decir',
       'sí', 'si', 'no', 'tal vez', 'quizás'
     ];
+    if (evasivas.includes(text)) return false;
   
-    // Verifica si la respuesta solo tiene alguna de esas evasivas
-    return !evasivas.some(f => text === f || text.includes(f));
+    // Si contiene al menos una palabra relevante, se acepta (aunque sea corta)
+    const palabrasClave = ['innovación', 'creación', 'imaginación', 'lógica', 'análisis', 'arte', 'música', 'tecnología'];
+    if (palabrasClave.some(p => text.includes(p))) return true;
+  
+    // Si tiene al menos 5 palabras, también es válida
+    if (text.split(/\s+/).length >= 5) return true;
+  
+    // Si es una sola palabra significativa (no evasiva), se acepta
+    if (text.length >= 4 && text.split(' ').length === 1) return true;
+  
+    return false;
   }
   
 
@@ -180,7 +184,7 @@ export class ChatbotComponent implements OnInit {
   }
 
   async generateNaturalResponse(pregunta: string, respuesta: string, siguiente: string): Promise<string> {
-    const prompt = `Eres un orientador cálido y natural de la UTMACH. Comenta con empatía la respuesta: "${respuesta}" a la pregunta: "${pregunta}". Luego enlaza naturalmente con la siguiente: "${siguiente}". Usa un solo mensaje, fluido y cercano. **No incluyas notas entre corchetes ni explicaciones entre paréntesis. Solo responde como si hablaras directamente al estudiante.**`;
+    const prompt = `Eres un orientador cálido y natural de la UTMACH. Comenta con empatía y brevemente la respuesta: "${respuesta}" a la pregunta: "${pregunta}". Luego enlaza de forma fluida y sencilla con la siguiente: "${siguiente}". Sé directo pero humano, sin extenderte demasiado. Usa un solo mensaje, natural y cercano. No incluyas notas ni corchetes.`;
 
     try {
       const res = await this.http.post<{ response: string }>('https://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
