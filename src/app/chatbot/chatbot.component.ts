@@ -16,7 +16,7 @@ interface ChatState {
   interestsDescription: string;
   hasName: boolean;
   isCollectingInterests: boolean;
-  chatTerminado?: boolean;  // <--- Aquí lo agregas
+  chatTerminado?: boolean; 
 }
 
 @Component({
@@ -27,9 +27,9 @@ interface ChatState {
   styleUrls: ['./chatbot.component.css'],
 })
 export class ChatbotComponent implements OnInit {
-private chatStorage = inject(ChatStorageService);
-private http = inject(HttpClient);
-private sanitizer = inject(DomSanitizer);
+  private chatStorage = inject(ChatStorageService);
+  private http = inject(HttpClient);
+  private sanitizer = inject(DomSanitizer);
 
   @ViewChild('chatContainer') chatContainer!: ElementRef;
 
@@ -51,55 +51,66 @@ private sanitizer = inject(DomSanitizer);
   isCollectingInterests = true;
   interestsDescription = '';
 
-
-
-async ngOnInit(): Promise<void> {
-  this.conversations = this.chatStorage.getConversations();
-  await this.typeBotMessage('¡Hola! Selecciona un usuario del historial o escribe tu nombre para empezar.');
-}
+  async ngOnInit(): Promise<void> {
+    this.conversations = this.chatStorage.getConversations();
+    await this.typeBotMessage('¡Hola! Selecciona un usuario del historial o escribe tu nombre para empezar.');
+  }
 
   private saveState(): void {
-  if (!this.userName) return;
+    if (!this.userName) return;
 
-  const state: ChatState = {
-    userName: this.userName,
-    messages: this.messages.map(m => ({ sender: m.sender, text: m.text })),
-    userAnswers: this.userAnswers,
-    questionIndex: this.questionIndex,
-    questions: this.questions,
-    interestsDescription: this.interestsDescription,
-    hasName: this.hasName,
-    isCollectingInterests: this.isCollectingInterests,
-    chatTerminado: this.chatTerminado
-  };
+    const state: ChatState = {
+      userName: this.userName,
+      messages: this.messages.map(m => ({ sender: m.sender, text: m.text })),
+      userAnswers: this.userAnswers,
+      questionIndex: this.questionIndex,
+      questions: this.questions,
+      interestsDescription: this.interestsDescription,
+      hasName: this.hasName,
+      isCollectingInterests: this.isCollectingInterests,
+      chatTerminado: this.chatTerminado
+    };
 
-  localStorage.setItem(`chat-state-${this.userName}`, JSON.stringify(state));
-}
+    localStorage.setItem(`chat-state-${this.userName}`, JSON.stringify(state));
+  }
 
-async validateAnswerWithAI(question: string, answer: string): Promise<boolean> {
-  const prompt = `
+  async validateAnswerWithAI(question: string, answer: string): Promise<number> {
+    const lowerAnswer = answer.toLowerCase();
+    const badPhrases = ['no sé', 'nada', 'ninguna idea', 'lo que sea', 'xD', 'cualquiera'];
+
+    if (answer.trim().length < 25 || badPhrases.some(p => lowerAnswer.includes(p))) {
+      return 0; // claramente inválida
+    }
+
+    const prompt = `
 Eres un orientador vocacional de la Universidad Técnica de Machala (UTMACH).
 Analiza la siguiente respuesta a esta pregunta:
 Pregunta: "${question}"
 Respuesta del estudiante: "${answer}"
-¿Es válida, coherente y útil esta respuesta para continuar con la orientación vocacional? Responde sólo con "sí" o "no".
+
+Evalúa esta respuesta del 1 al 5 según su nivel de expresión, claridad, utilidad y reflexión vocacional:
+1 = Muy pobre, sin sentido
+2 = Muy breve o genérica
+3 = Aceptable, pero superficial
+4 = Buena, con algo de reflexión
+5 = Excelente, muy expresiva y útil
+
+Responde SOLO con un número (1 a 5).
 `;
 
-  try {
-    const res = await this.http.post<{ response: string }>(
-      'https://chatbot-orientacion.onrender.com/api/chat',
-      { message: prompt }
-    ).toPromise();
+    try {
+      const res = await this.http.post<{ response: string }>(
+        'https://chatbot-orientacion.onrender.com/api/chat',
+        { message: prompt }
+      ).toPromise();
 
-    const reply = res?.response.toLowerCase().trim() || '';
-    return reply.startsWith('sí') || reply.startsWith('si');
-  } catch (error) {
-    console.error('Error al validar respuesta con IA:', error);
-    // En caso de error, puedes decidir si aceptar o rechazar
-    return false;
+      const score = parseInt(res?.response?.trim() || '0');
+      return isNaN(score) ? 0 : score;
+    } catch (error) {
+      console.error("Error al validar respuesta con IA:", error);
+      return 0;
+    }
   }
-}
-
 
   async sendMessage(): Promise<void> {
     if (!this.userMessage.trim() || this.chatTerminado) return;
@@ -109,21 +120,21 @@ Respuesta del estudiante: "${answer}"
     this.userMessage = '';
     this.scrollToBottom();
 
-if (!this.hasName) {
-  const extractedName = this.extractNameFromMessage(userText);
-  if (extractedName) {
-    this.userName = extractedName;  // Aquí está el nombre limpio
-    this.hasName = true;
-    this.saveState();
-    this.chatStorage.saveConversation(this.userName, this.messages);
-    this.currentConversation = { userName: this.userName, messages: this.messages };
-    await this.typeBotMessage(`¡Qué gusto conocerte, ${this.userName.split(' ')[0]}! 😊 Para ayudarte mejor, cuéntame: ¿cuáles son tus intereses, pasatiempos o aspiraciones profesionales?`);
-    this.saveState();
-    return;
-  } else {
-    await this.typeBotMessage('No entendí tu nombre. Por favor, dime cómo te llamas diciendo por ejemplo: "Me llamo Juan" o "Soy Ana".');
-    return;
-  }
+    if (!this.hasName) {
+      const extractedName = this.extractNameFromMessage(userText);
+      if (extractedName) {
+        this.userName = extractedName;  // Aquí está el nombre limpio
+        this.hasName = true;
+        this.saveState();
+        this.chatStorage.saveConversation(this.userName, this.messages);
+        this.currentConversation = { userName: this.userName, messages: this.messages };
+        await this.typeBotMessage(`¡Qué gusto conocerte, ${this.userName.split(' ')[0]}! 😊 Para ayudarte mejor, cuéntame: ¿cuáles son tus intereses, pasatiempos o aspiraciones profesionales?`);
+        this.saveState();
+        return;
+      } else {
+        await this.typeBotMessage('No entendí tu nombre. Por favor, dime cómo te llamas diciendo por ejemplo: "Me llamo Juan" o "Soy Ana".');
+        return;
+      }
     }
 
     if (this.isCollectingInterests) {
@@ -139,25 +150,37 @@ if (!this.hasName) {
       return;
     }
 
-if (this.questionIndex < this.questions.length) {
-  const currentQuestion = this.questions[this.questionIndex];
+    if (this.questionIndex < this.questions.length) {
+      const currentQuestion = this.questions[this.questionIndex];
 
-  // Validar con IA en lugar de isAnswerValid()
-  const isValid = await this.validateAnswerWithAI(currentQuestion.text, userText);
+      // Validar con IA en lugar de isAnswerValid()
+      const score = await this.validateAnswerWithAI(currentQuestion.text, userText);
 
-  if (!isValid) {
-    this.showInvalidAnswerMsg = true;
-    const prompt = `Eres un orientador vocacional empático de la Universidad Técnica de Machala (UTMACH). Has hecho esta pregunta: "${currentQuestion.text}". El estudiante respondió de forma confusa: "${userText}". Reformula la pregunta de forma más clara, con un ejemplo breve (máximo 15 palabras). Usa un tono amable y directo. Solo entrega la reformulación, no expliques ni incluyas notas.`;
-    try {
-      const res = await this.http.post<{ response: string }>('https://chatbot-orientacion.onrender.com/api/chat', { message: prompt }).toPromise();
-      const html = await this.parseMarkdown(res?.response || currentQuestion.text);
-      this.messages.push({ sender: 'bot', text: res?.response || currentQuestion.text, html });
-      this.scrollToBottom();
-    } catch {
-      await this.typeBotMessage('Déjame explicarlo mejor: ' + currentQuestion.text);
-    }
-    return;
-  }
+      if (score < 3) {
+        this.showInvalidAnswerMsg = true;
+
+        // Si es entre 1 y 2, respuesta confusa o muy pobre
+        if (score <= 2) {
+          const prompt = `Eres un orientador vocacional empático de la Universidad Técnica de Machala (UTMACH). Has hecho esta pregunta: "${currentQuestion.text}". El estudiante respondió de forma confusa: "${userText}". Reformula la pregunta de forma más clara, con un ejemplo breve (máximo 15 palabras). Usa un tono amable y directo. Solo entrega la reformulación, no expliques ni incluyas notas.`;
+          try {
+            const res = await this.http.post<{ response: string }>(
+              'https://chatbot-orientacion.onrender.com/api/chat',
+              { message: prompt }
+            ).toPromise();
+            const html = await this.parseMarkdown(res?.response || currentQuestion.text);
+            this.messages.push({ sender: 'bot', text: res?.response || currentQuestion.text, html });
+          } catch {
+            await this.typeBotMessage('Déjame explicarlo mejor: ' + currentQuestion.text);
+          }
+        } else {
+          // Si es 3, da sugerencia para mejorar
+          await this.typeBotMessage("¿Podrías ampliar un poco más tu respuesta? Mientras más expresiva sea, mejor puedo ayudarte 😊");
+        }
+
+        this.scrollToBottom();
+        return;
+      }
+
 
       this.showInvalidAnswerMsg = false;
       this.userAnswers[currentQuestion.key] = userText;
@@ -241,37 +264,25 @@ if (this.questionIndex < this.questions.length) {
     }
   }
 
-extractNameFromMessage(message: string): string | null {
-  const match = message.trim().match(/(?:me llamo|soy)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ\s]+)/i);
-  if (match?.[1]) return match[1].trim();
-  const words = message.trim().split(' ');
-  if (words.length >= 2) return message.trim();
-  if (words.length === 1 && !['hola', 'hey'].includes(words[0].toLowerCase())) return words[0];
-  return null;
-}
-
-
-  async typeBotMessage(text: string): Promise<void> {
-    const speed = 5;
-    let displayed = '';
-    const message: { sender: 'bot'; text: string; html?: SafeHtml } = {
-      sender: 'bot',
-      text: '',
-      html: undefined,
-    };
-    this.messages.push(message);
-
-    for (let i = 0; i < text.length; i++) {
-      displayed += text[i];
-      message.text = displayed;
-      if (i % 5 === 0) this.scrollToBottom();
-      await new Promise((r) => setTimeout(r, speed));
-    }
-
-    // NUEVO: formatear Markdown
-    message.html = await this.parseMarkdown(text);
-    this.scrollToBottom();
+  extractNameFromMessage(message: string): string | null {
+    const match = message.trim().match(/(?:me llamo|soy)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ\s]+)/i);
+    if (match?.[1]) return match[1].trim();
+    const words = message.trim().split(' ');
+    if (words.length >= 2) return message.trim();
+    if (words.length === 1 && !['hola', 'hey'].includes(words[0].toLowerCase())) return words[0];
+    return null;
   }
+
+
+async typeBotMessage(text: string): Promise<void> {
+  const message: { sender: 'bot' | 'user'; text: string; html?: SafeHtml } = {
+    sender: 'bot',
+    text,
+    html: await this.parseMarkdown(text),
+  };
+  this.messages.push(message);
+  this.scrollToBottom();
+}
 
   async parseMarkdown(text: string): Promise<SafeHtml> {
     const html = await marked.parse(text);
@@ -309,45 +320,44 @@ extractNameFromMessage(message: string): string | null {
     }
   }
 
-
   toggleMenu(): void {
     this.showMenu = !this.showMenu;
   }
 
- async loadConversation(userName: string): Promise<void> {
-  const savedState = localStorage.getItem(`chat-state-${userName}`);
-  if (savedState) {
-    try {
-      const state: ChatState = JSON.parse(savedState);
-      this.userName = state.userName;
-      this.messages = await Promise.all(state.messages.map(async msg =>
-        msg.sender === 'bot' ? { ...msg, html: await this.parseMarkdown(msg.text) } : msg
-      ));
-      this.userAnswers = state.userAnswers;
-      this.questionIndex = state.questionIndex;
-      this.questions = state.questions;
-      this.interestsDescription = state.interestsDescription;
-      this.hasName = state.hasName;
-      this.isCollectingInterests = state.isCollectingInterests;
-      this.chatTerminado = state.chatTerminado ?? false;
-      this.scrollToBottom();
-    } catch (error) {
-      console.error('Error cargando estado guardado:', error);
-      this.resetChat();
+  async loadConversation(userName: string): Promise<void> {
+    const savedState = localStorage.getItem(`chat-state-${userName}`);
+    if (savedState) {
+      try {
+        const state: ChatState = JSON.parse(savedState);
+        this.userName = state.userName;
+        this.messages = await Promise.all(state.messages.map(async msg =>
+          msg.sender === 'bot' ? { ...msg, html: await this.parseMarkdown(msg.text) } : msg
+        ));
+        this.userAnswers = state.userAnswers;
+        this.questionIndex = state.questionIndex;
+        this.questions = state.questions;
+        this.interestsDescription = state.interestsDescription;
+        this.hasName = state.hasName;
+        this.isCollectingInterests = state.isCollectingInterests;
+        this.chatTerminado = state.chatTerminado ?? false;
+        this.scrollToBottom();
+      } catch (error) {
+        console.error('Error cargando estado guardado:', error);
+        this.resetChat();
+      }
+    } else {
+      await this.typeBotMessage('No se encontró una conversación guardada para este usuario.');
     }
-  } else {
-    await this.typeBotMessage('No se encontró una conversación guardada para este usuario.');
   }
-}
 
-deleteConversation(userName: string): void {
-  if (confirm(`¿Eliminar la conversación con "${userName}"?`)) {
-    this.chatStorage.deleteConversation(userName);
-    localStorage.removeItem(`chat-state-${userName}`);
-    this.conversations = this.chatStorage.getConversations();
-    if (this.currentConversation?.userName === userName) this.resetChat();
+  deleteConversation(userName: string): void {
+    if (confirm(`¿Eliminar la conversación con "${userName}"?`)) {
+      this.chatStorage.deleteConversation(userName);
+      localStorage.removeItem(`chat-state-${userName}`);
+      this.conversations = this.chatStorage.getConversations();
+      if (this.currentConversation?.userName === userName) this.resetChat();
+    }
   }
-}
 
   copiarConversacion(): void {
     const textoPlano = this.messages
